@@ -1,0 +1,15 @@
+{{- range $component := list "postgres" "redis" "uploads" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: {{ $.Values.storageClassName | quote }}
+  resources:
+    requests:
+      storage: {{ index $.Values.storage $component }}
+{{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: palmscout-pilot
+description: Private single-node preparation; no ingress, scheduler or worker.
+type: application
+version: 0.1.0
+appVersion: "preparation-only"

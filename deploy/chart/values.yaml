@@ -1,0 +1,62 @@
+# All image references must be independently verified repository@sha256 digests.
+images:
+  api: ""
+  web: ""
+  postgres: ""
+  redis: ""
+imagePullSecrets: []
+# Deliberately idle. Start data services, migrate, then start API/web separately.
+replicas:
+  api: 0
+  web: 0
+  postgres: 0
+  redis: 0
+existingSecrets:
+  app: palmscout-app
+  postgres: palmscout-postgres
+  redis: palmscout-redis
+solveit:
+  enabled: false
+  baseUrl: https://support.neurofunken.de
+  # Existing Secret with SOLVEIT_INTAKE_KEY; never an agent API token.
+  existingSecret: ""
+  # Explicit NetworkPolicy egress rules to the HTTPS intake, supplied by operator.
+  egress: []
+frontendOrigin: https://app.example.com
+apiOrigin: https://api.example.com
+webLegal:
+  LEGAL_COMPANY_NAME: ""
+  LEGAL_LEGAL_FORM: ""
+  LEGAL_REPRESENTED_BY: ""
+  LEGAL_STREET: ""
+  LEGAL_POSTAL_CODE: ""
+  LEGAL_CITY: ""
+  LEGAL_CONTACT_EMAIL: ""
+  LEGAL_PRIVACY_EMAIL: ""
+  LEGAL_REGISTER: ""
+  LEGAL_REGISTER_NUMBER: ""
+  LEGAL_VAT_ID: ""
+  LEGAL_REVIEWED: "false"
+storageClassName: local-path
+storage:
+  postgres: 8Gi
+  redis: 1Gi
+  uploads: 2Gi
+resources:
+  api:
+    requests: {cpu: 200m, memory: 384Mi}
+    limits: {cpu: "1", memory: 1Gi}
+  web:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 384Mi}
+  postgres:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  redis:
+    requests: {cpu: 25m, memory: 32Mi}
+    limits: {cpu: 100m, memory: 128Mi}
+migration:
+  create: false
+  # Never an automatic Helm hook. Operator must explicitly unsuspend later.
+  suspend: true
+  expectedRevision: "054"

@@ -1,0 +1,49 @@
+{{- if .Values.migration.create }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-migrate-{{ .Values.migration.expectedRevision }}
+spec:
+  suspend: {{ .Values.migration.suspend }}
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "palmscout.labels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: migrate
+          image: {{ .Values.images.api | quote }}
+          imagePullPolicy: IfNotPresent
+          command: [alembic, upgrade, {{ .Values.migration.expectedRevision | quote }}]
+          envFrom:
+            - configMapRef: {name: {{ .Release.Name }}-config}
+          env:
+            - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+            {{- range $key := list "DATABASE_URL" "REDIS_URL" "SECRET_KEY" "SCRAPER_IMPORT_KEY" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef: {name: {{ $.Values.existingSecrets.app }}, key: {{ $key }}}
+            {{- end }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources: {{ toJson .Values.resources.api }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+{{- end }}

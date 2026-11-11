@@ -1,0 +1,21 @@
+# The build context is frontend/ only. Never send local env, fixtures or artifacts.
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!next-env.d.ts
+!tsconfig.json
+!postcss.config.mjs
+!app/
+!app/**
+!components/
+!components/**
+!lib/
+!lib/**
+!public/
+!public/**
+**/.env*
+**/*.pem
+**/*.key
+**/*.log
+**/node_modules/**

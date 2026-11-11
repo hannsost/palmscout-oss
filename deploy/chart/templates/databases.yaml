@@ -1,0 +1,97 @@
+{{- range $component := list "postgres" "redis" }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+spec:
+  serviceName: {{ $.Release.Name }}-{{ $component }}
+  replicas: {{ index $.Values.replicas $component }}
+  selector:
+    matchLabels:
+      {{- include "palmscout.labels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "palmscout.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: {{ $component }}
+          image: {{ index $.Values.images $component | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          {{- if eq $component "postgres" }}
+          env:
+            - {name: POSTGRES_USER, value: postgres}
+            - {name: POSTGRES_DB, value: palmscout}
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ $.Values.existingSecrets.postgres }}, key: admin-password}
+            - name: PALMSCOUT_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ $.Values.existingSecrets.postgres }}, key: password}
+            - {name: POSTGRES_INITDB_ARGS, value: "--auth-host=scram-sha-256 --data-checksums"}
+          readinessProbe:
+            exec: {command: [pg_isready, -U, palmscout, -d, palmscout]}
+            periodSeconds: 10
+          ports: [{containerPort: 5432}]
+          {{- else }}
+          command: [redis-server, /etc/redis/redis.conf]
+          readinessProbe:
+            tcpSocket: {port: 6379}
+            periodSeconds: 10
+          ports: [{containerPort: 6379}]
+          {{- end }}
+          resources:
+            {{- index $.Values.resources $component | toYaml | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - name: data
+              mountPath: {{ if eq $component "postgres" }}/var/lib/postgresql/data{{ else }}/data{{ end }}
+            {{- if eq $component "postgres" }}
+            - {name: socket, mountPath: /var/run/postgresql}
+            - {name: initdb, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+            {{- else }}
+            - {name: config, mountPath: /etc/redis, readOnly: true}
+            - {name: auth, mountPath: /run/redis-auth, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: data
+          persistentVolumeClaim: {claimName: {{ $.Release.Name }}-{{ $component }}}
+        {{- if eq $component "postgres" }}
+        - name: socket
+          emptyDir: {sizeLimit: 16Mi}
+        - name: initdb
+          configMap:
+            name: {{ $.Release.Name }}-postgres-init
+            defaultMode: 0555
+        {{- else }}
+        - name: config
+          configMap:
+            name: {{ $.Release.Name }}-redis-config
+            items: [{key: redis.conf, path: redis.conf}]
+        - name: auth
+          secret:
+            secretName: {{ $.Values.existingSecrets.redis }}
+            defaultMode: 0440
+            items: [{key: password.conf, path: password.conf}]
+        {{- end }}
+{{- end }}

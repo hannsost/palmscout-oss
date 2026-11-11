@@ -1,0 +1,12 @@
+# Deny by default. This Dockerfile-specific ignore is used with -f backend.Dockerfile.
+**
+!pyproject.toml
+!constraints-py312.txt
+!alembic.ini
+!app/
+!app/**/
+!app/**/*.py
+!alembic/
+!alembic/**/
+!alembic/**/*.py
+!alembic/script.py.mako

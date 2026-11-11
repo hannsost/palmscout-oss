@@ -1,0 +1,104 @@
+{{- range $component, $port := dict "api" 8000 "web" 3000 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}
+spec:
+  replicas: {{ index $.Values.replicas $component }}
+  strategy: {type: Recreate}
+  selector:
+    matchLabels:
+      {{- include "palmscout.labels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  template:
+    metadata:
+      labels:
+        {{- include "palmscout.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: {{ $component }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets: {{ toJson . }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ if eq $component "api" }}10001{{ else }}1001{{ end }}
+        runAsGroup: {{ if eq $component "api" }}10001{{ else }}1001{{ end }}
+        fsGroup: {{ if eq $component "api" }}10001{{ else }}1001{{ end }}
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: {{ $component }}
+          image: {{ index $.Values.images $component | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          {{- if eq $component "api" }}
+          command: [uvicorn, app.main:app, --host, 0.0.0.0, --port, "8000", --workers, "1", --no-access-log]
+          envFrom:
+            - configMapRef: {name: {{ $.Release.Name }}-config}
+          env:
+            {{- range $key := list "DATABASE_URL" "REDIS_URL" "SECRET_KEY" "SCRAPER_IMPORT_KEY" }}
+            - name: {{ $key }}
+              valueFrom:
+                secretKeyRef: {name: {{ $.Values.existingSecrets.app }}, key: {{ $key }}}
+            {{- end }}
+            {{- if $.Values.solveit.enabled }}
+            - name: SOLVEIT_BASE_URL
+              value: {{ $.Values.solveit.baseUrl | quote }}
+            - name: SOLVEIT_INTAKE_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ $.Values.solveit.existingSecret }}, key: SOLVEIT_INTAKE_KEY}
+            {{- end }}
+          readinessProbe:
+            exec: {command: [python, /opt/palmscout/dependencies.py]}
+            periodSeconds: 30
+            timeoutSeconds: 10
+          startupProbe:
+            httpGet: {path: /health, port: 8000}
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 30
+          {{- else }}
+          env:
+            - {name: NODE_ENV, value: production}
+            - {name: NEXT_TELEMETRY_DISABLED, value: "1"}
+            {{- range $name, $value := $.Values.webLegal }}
+            - {name: {{ $name }}, value: {{ $value | quote }}}
+            {{- end }}
+          readinessProbe:
+            httpGet: {path: /login, port: 3000}
+            periodSeconds: 15
+          startupProbe:
+            httpGet: {path: /login, port: 3000}
+            failureThreshold: 30
+            periodSeconds: 10
+          {{- end }}
+          ports: [{containerPort: {{ $port }}}]
+          resources:
+            {{- index $.Values.resources $component | toYaml | nindent 12 }}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            {{- if eq $component "api" }}
+            - {name: uploads, mountPath: /data/uploads}
+            - {name: readiness, mountPath: /opt/palmscout, readOnly: true}
+            {{- else }}
+            - {name: cache, mountPath: /app/.next/cache}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 128Mi}
+        {{- if eq $component "api" }}
+        - name: uploads
+          persistentVolumeClaim: {claimName: {{ $.Release.Name }}-uploads}
+        - name: readiness
+          configMap: {name: {{ $.Release.Name }}-readiness}
+        {{- else }}
+        - name: cache
+          emptyDir: {sizeLimit: 128Mi}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,79 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-default-deny
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-dns
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "palmscout.labels" . | nindent 6 }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+{{- range $component, $port := dict "api" 8000 "postgres" 5432 "redis" 6379 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}-incoming
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "palmscout.labels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "palmscout.labels" $ | nindent 14 }}
+              app.kubernetes.io/component: {{ if eq $component "api" }}web{{ else }}api{{ end }}
+      ports: [{protocol: TCP, port: {{ $port }}}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $.Release.Name }}-{{ $component }}-outgoing
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "palmscout.labels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ if eq $component "api" }}web{{ else }}api{{ end }}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "palmscout.labels" $ | nindent 14 }}
+              app.kubernetes.io/component: {{ $component }}
+      ports: [{protocol: TCP, port: {{ $port }}}]
+{{- end }}
+{{- if .Values.solveit.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-solveit-intake
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "palmscout.labels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Egress]
+  egress:
+    {{- .Values.solveit.egress | toYaml | nindent 4 }}
+{{- end }}

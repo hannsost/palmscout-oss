@@ -1,0 +1,45 @@
+{{- include "palmscout.validate" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-config
+data:
+  APP_ENV: production
+  PUBLIC_REGISTRATION_ENABLED: "false"
+  FRONTEND_URL: {{ .Values.frontendOrigin | quote }}
+  ALLOWED_ORIGINS: {{ list .Values.frontendOrigin | toJson | quote }}
+  AI_MOCK_MODE: "false"
+  AGENTS_EXTERNAL_AI_ENABLED: "false"
+  SMTP_HOST: ""
+  INVOICE_VALIDATOR_URL: ""
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  HF_HOME: /tmp/huggingface
+  XDG_CACHE_HOME: /tmp/cache
+  HOME: /tmp
+  PYTHONDONTWRITEBYTECODE: "1"
+  UPLOAD_DIR: /data/uploads
+  EXPECTED_MIGRATION: {{ .Values.migration.expectedRevision | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-redis-config
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    protected-mode yes
+    dir /data
+    appendonly yes
+    save ""
+    maxmemory 96mb
+    maxmemory-policy noeviction
+    include /run/redis-auth/password.conf
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-readiness
+data:
+  dependencies.py: |
+{{ .Files.Get "files/dependencies.py" | indent 4 }}
